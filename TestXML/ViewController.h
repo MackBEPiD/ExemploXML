@@ -8,6 +8,6 @@
 
 #import <UIKit/UIKit.h>
 
-@interface ViewController : UIViewController <NSXMLParserDelegate>
+@interface ViewController : UITableViewController <NSXMLParserDelegate>
 
 @end

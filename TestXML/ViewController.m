@@ -10,10 +10,10 @@
 
 @interface ViewController ()
 {
-    NSString * xml;
-    NSString * currentElement;
-    NSString * carret;
     NSMutableData *dados;
+    NSMutableArray *itens;
+    NSMutableDictionary *item;
+    NSString *nodeValue;
 }
 
 @end
@@ -21,16 +21,20 @@
 @implementation ViewController
 
 static BOOL parsedElement = NO;
+static BOOL isInNode = NO;
 
 - (void)viewDidLoad
 {
     [super viewDidLoad];
     
     dados = [[NSMutableData alloc] init];
+    itens = [[NSMutableArray alloc] init];
     
     NSURL *url = [NSURL URLWithString:@"http://feeds.feedburner.com/blogmacmagazine?format=xml"];
     NSURLRequest *req = [NSURLRequest requestWithURL:url];
-    NSURLConnection *con = [[NSURLConnection alloc] initWithRequest:req delegate:self startImmediately:YES];
+    NSURLConnection *con = [[NSURLConnection alloc] initWithRequest:req delegate:self startImmediately:NO];
+    
+    [con start];
     
     //    xml = [NSString stringWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"Contatos" ofType:@"xml"] encoding:NSUTF8StringEncoding error:nil];
     //    NSXMLParser * parser = [[NSXMLParser alloc] initWithData:[xml dataUsingEncoding:NSUTF8StringEncoding]];
@@ -50,6 +54,7 @@ static BOOL parsedElement = NO;
 // envia dados de modo incremental
 - (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data {
     // código para tratar os dados recebidos
+    
     [dados appendData:data];
 }
 
@@ -59,49 +64,114 @@ static BOOL parsedElement = NO;
 - (void)connectionDidFinishLoading:(NSURLConnection *)connection {
     // código para tratar o fim da conexão
     
-    xml = [[NSString alloc] initWithData:dados encoding:NSUTF8StringEncoding];
+    NSString *xml = [[NSString alloc] initWithData:dados encoding:NSUTF8StringEncoding];
     
     NSXMLParser * parser = [[NSXMLParser alloc] initWithData:[xml dataUsingEncoding:NSUTF8StringEncoding]];
     [parser setDelegate:self];
     [parser parse];
 }
 
--(void)parser:(NSXMLParser *)parser didStartElement:(NSString *)elementName
- namespaceURI:(NSString *)namespaceURI
-qualifiedName:(NSString *)qName
-   attributes:(NSDictionary *)attributeDict
+#pragma mark - Métodos do delegate do NSXMLParser
+
+- (void)parser:(NSXMLParser *)parser didStartElement:(NSString *)elementName namespaceURI:(NSString *)namespaceURI qualifiedName:(NSString *)qName attributes:(NSDictionary *)attributeDict
 {
-    if([elementName isEqualToString:@"title"])
-        carret = @"  TITLE: ";
-    else if([elementName isEqualToString:@"link"])
-        carret = @"\t LINK: ";
-    currentElement = elementName;
-    parsedElement = YES;
-    // entra na tag
+    if ([elementName isEqualToString:@"item"]) {
+        item = [[NSMutableDictionary alloc] init];
+        isInNode = YES;
+    }
+    
+    if (isInNode && ([elementName isEqualToString:@"title"] || [elementName isEqualToString:@"description"])) {
+        parsedElement = YES;
+        nodeValue = @"";
+        // entra na tag
+    }
 }
 
--(void)parser:(NSXMLParser *)parser
-didEndElement:(NSString *)elementName
- namespaceURI:(NSString *)namespaceURI
-qualifiedName:(NSString *)qName
+- (void)parser:(NSXMLParser *)parser didEndElement:(NSString *)elementName namespaceURI:(NSString *)namespaceURI qualifiedName:(NSString *)qName
 {
-    NSLog(@"%@",carret);
-    carret = @"";
-    currentElement = nil;
-    parsedElement = NO;
-    // sai da tag
+    if ([elementName isEqualToString:@"item"]) {
+        [itens addObject:item];
+        isInNode = NO;
+    }
+    
+    if (([elementName isEqualToString:@"title"] || [elementName isEqualToString:@"description"])) {
+        [item setObject:nodeValue forKey:elementName];
+        
+        parsedElement = NO;
+        // sai da tag
+    }
 }
 
--(void)parser:(NSXMLParser *)parser foundCharacters:(NSString *)string
+- (void)parser:(NSXMLParser *)parser foundCharacters:(NSString *)string
 {
     if(parsedElement)
     {
-        if([currentElement isEqualToString:@"title"])
-            carret = [NSString stringWithFormat:@"%@%@",carret,[string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]];
-        else if([currentElement isEqualToString:@"link"])
-            carret = [NSString stringWithFormat:@"%@%@",carret,[string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]];
+        nodeValue = [nodeValue stringByAppendingString:[string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]];
     }
     // acha valor dentro da tag
+}
+
+- (void)parserDidEndDocument:(NSXMLParser *)parser {
+    [[self tableView] reloadData];
+}
+
+#pragma mark - Table view data source
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
+{
+    // Return the number of sections.
+    NSInteger numSections = 1;
+    
+    return numSections;
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
+{
+    // Return the number of rows in the section.
+    NSInteger numRows = [itens count];
+    
+    return numRows;
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    NSString *sectionName = @"Notícias";
+    
+    return sectionName;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    NSString *reuseIdentifier = @"Celula";
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:reuseIdentifier];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:reuseIdentifier];
+    }
+    // Configure the cell...
+    
+    [[cell textLabel] setText:[[itens objectAtIndex:indexPath.row] objectForKey:@"title"]];
+    
+    [cell setAccessoryType:UITableViewCellAccessoryDisclosureIndicator];
+    
+    return cell;
+}
+
+#pragma mark - TableViewDelegate
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    NSString *description = [[itens objectAtIndex:indexPath.row] objectForKey:@"description"];
+    
+    UIView *view = [[UIView alloc] init];
+    [view setFrame:self.view.frame];
+    
+    UITextView *textView = [[UITextView alloc] init];
+    [textView setFrame:view.frame];
+    [textView setEditable:NO];
+    [textView setText:description];
+    
+    [view addSubview:textView];
+    
+    [self.view addSubview:view];
 }
 
 @end
